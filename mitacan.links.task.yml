@@ -1,0 +1,17 @@
+mitacan.operations:
+  title: 'Mitacan'
+  route_name: mitacan.operations
+  base_route: mitacan.admin_config_mitacan
+mitacan.services_tab:
+  title: 'Web Servislerini Gör'
+  route_name: mitacan.services
+  base_route: mitacan.admin_config_mitacan
+  weight: -1
+mitacan.xlsx_upload_tab:
+  title: 'XLSX Yükleme'
+  route_name: mitacan.xlsx_upload
+  base_route: mitacan.admin_config_mitacan
+mitacan.usd_rate_tab:
+  title: 'USD Kuru Girme'
+  route_name: mitacan.usd_rate
+  base_route: mitacan.admin_config_mitacan

@@ -1,0 +1,4 @@
+name: 'Mitacan Custom Module'
+type: module
+description: 'Mitacan Custom Module'
+core: 8.x

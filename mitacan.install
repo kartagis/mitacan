@@ -1,0 +1,80 @@
+<?php
+
+function mitacan_schema() {
+  $schema["excel"] = [
+    "description" => "Ürün İlave Bilgiler Temp Tablosu",
+    "fields" => [
+      "stoktipi" => [
+        "description" => "Stok Tipi",
+        "type" => "varchar",
+        "length" => 5,
+        "not null" => TRUE,
+        "default" => "00000",
+      ],
+      "stokkodu" => [
+        "description" => "Stok Kodu",
+        "type" => "varchar",
+        "length" => 25,
+        "not null" => TRUE,
+      ],
+      "ebeveyn" => [
+        "description" => "Ebeveyn Stok Kodu",
+        "type" => "varchar",
+        "length" => 25,
+        "not null" => TRUE,
+      ],
+      "logo" => [
+        "description" => "Ürünün Logosu",
+        "type" => "varchar",
+        "length" => 75,
+        "not null" => TRUE,
+        "default" => "defaultlogo.png",
+      ],
+      "gorsel" => [
+        "description" => "Ürün Görseli",
+        "type" => "varchar",
+        "length" => 75,
+        "not null" => TRUE,
+        "default" => "hazirlaniyor.png",
+      ],
+      "grupkodu" => [
+        "description" => "Grup Kodu",
+        "type" => "int",
+      ],
+      "grupadi" => [
+        "description" => "Grup Adı",
+        "type" => "varchar",
+        "length" => 250,
+      ],
+      "grupindex" => [
+        "description" => "Grup Kodu İçindeki Ürünlerin Sıralaması",
+        "type" => "int",
+      ],
+      "paketadedi" => [
+        "description" => "Paket İçi Miktarı",
+        "type" => "int",
+        "not null" => TRUE,
+        "default" => 1,
+      ],
+    ],
+    $schema['urun'] = [
+      'description' > 'Ürün ceşitli bilgileri',
+        'fields' => [
+          'stokkodu' => [
+            'description' => 'Ürün stok kodu',
+            'type' => 'varchar',
+            'length' => 250
+          ],
+          'image_id' => [
+            'description' => 'Ürün görsel nesnesi target_id',
+            'type' => 'int',
+          ],
+          'logo_id' => [
+            'description' => 'Ürün görsel nesnesi target_id',
+            'type' => 'int',
+          ],
+      ]
+    ]
+  ];
+  return $schema;
+}

@@ -1,0 +1,35 @@
+mitacan.operations:
+  path: '/admin/config/mitacan'
+  defaults:
+    _title: 'Mitacan'
+    _form: 'Drupal\mitacan\Form\MitacanWebServicesForm'
+  requirements:
+    _permission: 'administer site configuration'
+mitacan.services:
+  path: '/admin/config/mitacan/services'
+  defaults:
+    _form: 'Drupal\mitacan\Form\MitacanWebServicesForm'
+    _title: 'Web Servislerini Gör'
+  requirements:
+    _permission: 'administer site configuration'
+mitacan.xlsx_upload:
+  path: '/admin/config/mitacan/xlsx_upload'
+  defaults:
+    _form: 'Drupal\mitacan\Form\MitacanXlsxUploadForm'
+    _title: 'XLSX Yükleme'
+  requirements:
+    _permission: 'administer site configuration'
+mitacan.usd_rate:
+  path: '/admin/config/mitacan/usd_rate'
+  defaults:
+    _form: 'Drupal\mitacan\Form\MitacanUsdRateForm'
+    _title: 'USD Kuru Girme'
+  requirements:
+    _permission: 'administer site configuration'
+mitacan.payment:
+  path: '/odeme'
+  defaults:
+    _form: 'Drupal\mitacan\Form\MitacanPaymentForm'
+    _title: 'Ödeme'
+  requirements:
+    _role: 'authenticated'

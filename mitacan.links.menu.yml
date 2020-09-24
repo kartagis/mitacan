@@ -1,0 +1,21 @@
+mitacan.operations:
+  title: 'Mitacan'
+  route_name: mitacan.operations
+  parent: system.admin_config
+mitacan.services:
+  title: 'Mitacan Web Servisleri'
+  route_name: mitacan.services
+  parent: system.admin_config_mitacan
+  description: 'Mitacan web servislerini göster.'
+  weight: -15
+mitacan.xlsx_upload:
+  title: 'Mitacan CSV yükleme'
+  route_name: mitacan.xlsx_upload
+  parent: system.admin_config_mitacan
+  description: 'Mitacan CSV yükleme'
+  weight: -15
+mitacan.usd_rate:
+  title: 'Mitacan USD kuru girme'
+  route_name: mitacan.usd_rate
+  parent: system.admin_config_mitacan
+  description: 'Mitacan USD Kuru Girme'

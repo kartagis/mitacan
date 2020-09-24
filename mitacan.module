@@ -1,0 +1,367 @@
+<?php
+
+use Drupal\Core\Field\FieldItemList;
+use Drupal\Core\Queue\QueueFactory;
+use Drupal\Core\Queue\QueueInterface;
+use Drupal\Core\Database\Database;
+use Drupal\node\Entity\Node;
+use Drupal\user\Entity\User;
+use Drupal\file\Entity\File;
+use Drupal\taxonomy\Entity\Term;
+use Drupal\commerce_price\Price;
+use Drupal\commerce_product\Entity\Product;
+use Drupal\commerce_product\Entity\ProductVariation;
+use Drupal\commerce_product\Entity\ProductInterface;
+use Symfony\Component\HttpFoundation\RedirectResponse;
+
+// Fonksiyonların hepsi çalıştırılmalı ve bu sırayla çalıştırılmalı
+
+function create_aliases($entity) {
+  $items = Drupal::entityTypeManager()->getStorage($entity)->loadMultiple();
+  foreach ($items as $item) {
+    pathauto_entity_insert($item);
+    $item->save();
+  }
+}
+
+function truncate($table) {
+  if (Database::getConnection()->schema()->tableExists($table)) {
+    \Drupal::database()->truncate($table)->execute();
+  }
+}
+
+function birinciStk() {
+  $taxonomy_tables = \Drupal::entityTypeManager()->getStorage('taxonomy_term')->getTableMapping()->getTableNames();
+  foreach ($taxonomy_tables as $taxonomy_table) {
+    truncate($taxonomy_table);
+  }
+  truncate("url_alias");
+  $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2b/api/vstklib/GetStkGrb1?UserCode=semih@bilgesan.com");
+  $res = $req->getBody();
+  $res = json_decode($res);
+  foreach ($res->Data as $r) {
+    $term = Term::create([
+	"vid" => "stok_grup_kodu",
+	"name" => $r->GrupAdi,
+	"field_stok_grup_kodu" => $r->Grup1Kodu,
+    ]);
+    $term->enforceIsNew();
+    $term->save();
+    create_aliases("taxonomy_term");
+  }
+}
+
+function ikinciStk() {
+  $birinci = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id","field_stok_grup_kodu_value"])->condition("field_stok_grup_kodu_value", "1%", "LIKE")->execute()->fetchAll();
+  foreach ($birinci as $bir) {
+    $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2b/api/vstklib/GetStkGrb2?UserCode=semih@bilgesan.com&Grup1Code=".$bir->field_stok_grup_kodu_value);
+    $res = $req->getBody();
+    $res = json_decode($res);
+    foreach ($res->Data as $r) {
+      $term = Term::create([
+	  "vid" => "stok_grup_kodu",
+	  "name" => $r->GrupAdi,
+	  "field_stok_grup_kodu" => $r->Grup2Kodu,
+	  "parent" => $bir->entity_id
+      ]);
+      $term->save();
+    }
+  }
+}
+
+function ucuncuStk() {
+  $birinci = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id","field_stok_grup_kodu_value" ])->condition("field_stok_grup_kodu_value", "1%", "LIKE")->execute()->fetchAll();
+  $ikinci = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id","field_stok_grup_kodu_value" ])->condition("field_stok_grup_kodu_value", "2%", "LIKE")->execute()->fetchAll();
+  foreach ($birinci as $bir) {
+    foreach ($ikinci as $iki) {
+      $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2b/api/vstklib/GetStkGrb3?UserCode=semih@bilgesan.com&Grup1Code=".$bir->field_stok_grup_kodu_value."&Grup2Code=".$iki->field_stok_grup_kodu_value);
+      $res = $req->getBody();
+      $res = json_decode($res);
+      foreach ($res->Data as $r) {
+	$queue = Drupal::service("queue")->get("mitacanQueue");
+	if ($queue->createItem($r)) {
+	  $term = Term::create([
+	      "vid" => "stok_grup_kodu",
+	      "name" => $r->GrupAdi,
+	      "field_stok_grup_kodu" => $r->Grup3Kodu,
+	      "parent" => $iki->entity_id
+	  ]);
+	  $term->enforceIsNew();
+	  $term->save();
+	}
+      }
+    }
+  }
+}
+
+function tm() {
+  $term = Term::create([
+      "vid" => "stok_tipi",
+      "name" => "Ticari Mallar",
+  ]);
+  $term->save();
+}
+
+function liste() {
+  $src = ["�", "Þ", "ý", "þ", "ð"];
+  $tar = ["İ", "Ş", "ı", "ş", "ğ"];
+  $grupadi = \Drupal::database()->select("excel","e")->fields("e",["grupadi"])->condition("grupadi", "","!=")->groupBy("grupadi")->execute()->fetchAll();
+  foreach ($grupadi as $g) {
+    $term = Term::create([
+	"vid" => "liste_adi",
+	"name" => $g->grupadi,
+    ]);
+    $term->enforceIsNew();
+    $term->save();
+  }
+  $terms = \Drupal::entityTypeManager()->getStorage("taxonomy_term")->loadTree("liste_adi");
+  foreach($terms as $term) {
+    $stokkodu = \Drupal::database()->select("excel", "e")->fields("e", ["stokkodu"])->condition("grupadi", $term->name)->execute()->fetchAll();
+    foreach($stokkodu as $s) {
+      $t = Term::load($term->tid);
+      $t->field_stok_kodu[] = $s->stokkodu;
+      $t->save();
+    }
+  }
+}
+
+function urunler() {
+  $product_tables = \Drupal::entityTypeManager()->getStorage('commerce_product')->getTableMapping()->getTableNames();
+  foreach($product_tables as $product_table) {
+    truncate($product_table);
+  }
+  $variation_tables = \Drupal::entityTypeManager()->getStorage('commerce_product_variation')->getTableMapping()->getTableNames();
+  foreach($variation_tables as $variation_table) {
+    truncate($variation_table);
+  }
+  truncate("url_alias");
+  $default = File::create([
+    'uri' => 'public://urun/hazirlaniyor.png'
+  ]);
+  $default->save();
+  $req = Drupal::httpClient()->get('http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetStkKodList');
+  $res = $req->getBody();
+  $res = json_decode($res);
+  $sid = \Drupal::entityManager()->getStorage('commerce_store')->loadDefault()->id();
+  $myArray = [];
+  foreach($res->Data as $e) {
+    $myArray[$e->StokKodu] = $e;
+  }
+  foreach($res->Data as $r) {
+    $stokkodu = [
+      'query' => [
+        'stokKodu' => $r->StokKodu
+      ]
+    ];
+    $depomiktari = Drupal::httpClient()->get("http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetDepoMiktari", $stokkodu);
+    $depomiktari = $depomiktari->getBody();
+    $depomiktari = json_decode($depomiktari);
+    foreach($depomiktari->Data as $d) {
+      $stokmiktari = $d->stokMiktari;
+    }
+    $entity_id_1 = "";
+    $entity_id_2 = "";
+    $entity_id_3 = "";
+    $sid = \Drupal::entityManager()->getStorage('commerce_store')->loadDefault()->id();
+    $grupadi = \Drupal::database()->query("SELECT ttfd.tid,ttfd.name,ttfsk.field_stok_kodu_value,ttfsk.entity_id FROM taxonomy_term_field_data AS ttfd INNER JOIN taxonomy_term__field_stok_kodu AS ttfsk ON ttfd.tid=ttfsk.entity_id WHERE ttfsk.field_stok_kodu_value = :stokkodu", [":stokkodu" => $r->StokKodu])->fetchAll();
+    $grupadi = $grupadi[0]->tid;
+    $query = Drupal::database()->select('excel', 'e')->fields('e')
+      ->condition('ebeveyn', $r->StokKodu);
+    //$or = $query->orConditionGroup()
+      //->condition('grupindex', 1, '>');
+      //->condition('grupindex', NULL, 'IS NULL');
+    //$results = $query->condition($or)->execute()->fetchAll();
+    $results = $query->execute()->fetchAll();
+    $variations = [];
+    $check = false;
+    foreach($results as $result) {
+      $myVar = $myArray[$result->stokkodu];
+      $price_data = !empty($myVar->Fiyat) ?(string) $myVar->Fiyat : "0.00";
+      $price = new Price($price_data, ($r->DovizCinsi === "TRL")?"TRY":$r->DovizCinsi);
+      $variation = ProductVariation::create([
+        'type' => 'default',
+        'title' => $myVar->StokAdi,
+        'sku' => $result->stokkodu,
+        'price' => $price,
+        'field_listeli_urun_sirasi' => $result->grupindex,
+        'field_stok_kodu' => $r->StokKodu,
+        'field_stok' => $stokmiktari,
+        'qty_increments' => $result->paketadedi,
+      ]);
+      $variation->save();
+      $variations[] = $variation;
+      if ($result->grupindex == 1) {
+        $check = true;
+        $product = Product::create([
+          'type' => 'default',
+          'title' => $r->StokAdi,
+          'stores' => $sid,
+          'variations' => [],
+          'status' => ($r->SiparisVerilebilir == "true" || $r->PasifStok == "true")?1:0,
+          'field_stok_tipi' => $r->StokTipi,
+          'field_stok_tipi_adi' => \Drupal::database()->select("taxonomy_term_data", "ttd")->fields("ttd", ["tid"])->condition("vid", "stok_tipi")->execute()->fetchCol(),
+          'field_liste_adi' => $grupadi,
+          'field_liste_no' => $result->grupkodu,
+          'field_stok_kodu' => $r->StokKodu,
+          ]);
+      }
+    }
+    $product->variations = $variations;
+    $imagename = "public://urun/".$result->gorsel;
+    $images = \Drupal::entityTypeManager()
+      ->getStorage("file")
+      ->loadByProperties(["uri" => $imagename]);
+    $image = reset($images);
+    if (!$image) {
+    $image = File::create([
+    'uri' => $imagename,
+      ]);
+    $image->save();
+    }
+    $logoname = "public://urun/logo/".$result->logo;
+    $logos = \Drupal::entityTypeManager()
+      ->getStorage("file")
+      ->loadByProperties(["uri" => $logoname]);
+    $logo = reset($logos);
+    if (!$logo) {
+      $logo = File::create([
+        'uri' => $logoname,
+      ]);
+      $logo->save();
+    }
+
+
+    if (!empty($r->StkGrupKodu1)) { 
+      $entity_id_1 = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id"])->condition("field_stok_grup_kodu_value", $r->StkGrupKodu1)->execute()->fetchCol();
+      $entity_id_1 = (!empty($entity_id_1[0]))?$entity_id_1[0]:"";
+    }
+    if (!empty($r->StkGrupKodu2)) {
+      $entity_id_2 = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id"])->condition("field_stok_grup_kodu_value", $r->StkGrupKodu2)->execute()->fetchCol();
+      $entity_id_2 = (!empty($entity_id_2[0]))?$entity_id_2[0]:"";
+    }
+    if (!empty($r->StkGrupKodu3)) {
+      $entity_id_3 = \Drupal::database()->select("taxonomy_term__field_stok_grup_kodu", "ttfsgk")->fields("ttfsgk", ["entity_id"])->condition("field_stok_grup_kodu_value", $r->StkGrupKodu3)->execute()->fetchCol();
+      $entity_id_3 = (!empty($entity_id_3[0]))?$entity_id_3[0]:"";
+    }
+    $entity_ids = [$entity_id_1, $entity_id_2, $entity_id_3];
+    foreach ($entity_ids as $entity_id) {
+      $product->field_stok_grup_kodu[] = [
+        "target_id" => $entity_id,
+      ];
+    }
+    $product->field_urun_foto[] = [
+      "target_id" => file_exists($imagename)?$image->id():$default->id(),
+      "alt" => explode(".",explode("/",$imagename)[3])[0],
+      "title" => explode(".",explode("/",$imagename)[3])[0],
+    ];
+    $product->field_urun_logo[] = [
+      "target_id" => file_exists($logoname)?$logo->id():$default->id(),
+      "alt" => explode(".",explode("/",$logoname)[4])[0],
+      "title" => explode(".",explode("/",$logoname)[4])[0],
+    ];
+    if ($check) {
+      $product->save();
+    }
+    $variations = [];
+  }
+create_aliases('taxonomy_term');
+}
+
+function varyasyonlar() {
+  $products = \Drupal::entityTypeManager()->getStorage('commerce_product')->loadMultiple();
+  foreach($products as $product) {
+    $excel_variations = \Drupal::database()->select("excel", "e")->fields("e")->condition('stokkodu', $product->field_stok_kodu)->condition("grupindex", 1, ">")->execute()->fetchAll();
+      foreach ($excel_variations as $e) {
+        $stokkodu = [
+          "query" => [
+            "stokKodu" => $e->stokkodu
+          ]
+        ];
+        $stok = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetDepoMiktari", $stokkodu);
+        $stok = $stok->getBody();
+        $stok = json_decode($stok);
+        $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetStkKodlist?StokKodu=", $stokkodu);
+        $res = $req->getBody();
+        $res = json_decode($res);
+        $data = $res->Data[0];
+        $p = \Drupal::entityTypeManager()->getStorage("commerce_product")->loadByProperties(["field_stok_kodu" => $e->stokkodu]);
+        if ($p) {
+          $p = reset($p);
+          $pid = $p->id();
+          $price_data = !empty($r->Fiyat)?(string) $r->Fiyat:"-1.00";
+          $price = new Price($price_data, ($r->DovizCinsi === "TRL")?"TRY":$r->DovizCinsi);
+          $variation = ProductVariation::create([
+            'type' => 'default',
+            'title' => $data->StokAdi, 
+            'sku' => $data->StokKodu, 
+            'price' => $price,
+            'field_listeli_urun_sirasi' => $e->grupindex,
+            'product_id' => $pid,  
+            'qty_increments' => $e->paketadedi
+          ]);
+          $variation->field_stok = $stok->Data[0]->stokMiktari;
+          $variation->save();
+          $product = $variation->getProduct();
+          $product->setTitle($e->grupadi);
+          $product->save();
+        }
+    }
+  }
+}
+
+function kullanicilar() {
+  $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetKullaniciBilgileri");
+  $res = $req->getBody();
+  $res = json_decode($res);
+  foreach ($res->Data as $r) {
+    $queue = Drupal::service("queue")->get("mitacanQueue");
+    if ($queue->createItem($r)) {
+      $user = User::create(["type" => "mitacan"]);
+      $user->set("name", $r->kullaniciKodu);
+      $user->status = 1;
+      $user->field_miktar_gosterilsin = ($r->miktarGosterilsinmi == true)?1:0;
+      $user->field_kullanici_tipi = $r->kullaniciTipi;
+      $user->field_cep_telefonu = $r->cepTelefonu;
+
+      $user->save();
+    }
+  }
+}
+
+function cariler() {
+  $req = \Drupal::httpClient()->get("http://mitapp.mitacan.com/b2bv2/api/Mitacan/GetCariler");
+  $res = $req->getBody();
+  $res = json_decode($res);
+  foreach ($res->Data as $r) {
+    $queue = Drupal::service("queue")->get("mitacanQueue");
+    if ($queue->createItem($r)) {
+      $node = Node::create(["type" => "cari"]);
+      $node->set("title", $r->CariAdi);
+      $node->uid = 1;
+      $node->field_cari_kodu = $r->CariKodu;
+      $node->field_cari_tipi = $r->CariTipi;
+      $node->field_cari_adres = ($r->Adresler[0]->Adresi2)?$r->Adresler[0]->Adresi1." ".$r->Adresler[0]->Adresi2:$r->Adresler[0]->Adresi1;
+      $node->field_yetkili = $r->Yetkililer[1]->YetkiliAdi;
+      $node->language = "tr";
+      $node->uid = 1;
+      $node->enforceIsNew();
+      create_aliases("node");
+      $node->save();
+    }
+  }
+}
+
+function mitacan_user_login($account) {
+  $homeResponse = new RedirectResponse('/shop');
+  $homeResponse->send();
+}
+
+// https://drupal.stackexchange.com/a/227182/17632 - create a file for the image
+// https://www.drupal.org/node/1827278
+// https://www.drupal.org/node/2849847
+// https://docs.acquia.com/tutorials/fast-track-drupal-8-coding/create-nodes-programmatically
+// https://docs.acquia.com/tutorials/fast-track-drupal-8-coding/update-nodes-programmatically
+// https://docs.acquia.com/tutorials/fast-track-drupal-8-coding/create-terms-programmatically
+// https://docs.acquia.com/tutorials/fast-track-drupal-8-coding/attach-terms-another-entity-programmatically
+// https://stackoverflow.com/a/40689316/1384283 - create a product programmatically with product variations
+// Güncelleme için: SELECT sku FROM commerce_product_variation_field_data kontrolü yapılmalı
